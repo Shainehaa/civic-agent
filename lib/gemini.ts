@@ -1,11 +1,28 @@
-// This file talks to Google's Gemini AI model.
+// This file talks to Google's Gemini AI model via Vertex AI.
 // We send it an image + instructions ("prompt"), and it sends back
 // structured JSON we can use directly in our app.
+//
+// IMPORTANT: this uses Vertex AI (vertexai: true), NOT the Gemini
+// Developer API key. Vertex AI authenticates using Application Default
+// Credentials — your local `gcloud auth application-default login`
+// during development, and Cloud Run's service account automatically in
+// production. There is no API key involved anywhere in this file,
+// which avoids the Gemini Developer API key issues some accounts have
+// been experiencing since Google's mid-2026 Auth key migration.
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { GeminiAnalysis, ResolutionCheck } from "@/types";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || "civic-agent-e3fb1";
+const LOCATION = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+
+const ai = new GoogleGenAI({
+  vertexai: true,
+  project: PROJECT_ID,
+  location: LOCATION,
+});
+
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 // Strips "data:image/jpeg;base64," prefix if present, Gemini wants raw base64
 function cleanBase64(base64: string): string {
@@ -27,8 +44,6 @@ function getMimeType(base64: string): string {
 export async function analyzeIssueImage(
   imageBase64: string
 ): Promise<GeminiAnalysis> {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
   const prompt = `Analyze this civic issue image (e.g. pothole, broken streetlight, garbage dump, water leak, damaged sidewalk, etc).
 
 Return ONLY valid JSON, no markdown formatting, no backticks, no extra text. Use exactly this shape:
@@ -40,17 +55,25 @@ Return ONLY valid JSON, no markdown formatting, no backticks, no extra text. Use
   "department": "the most likely responsible government department, e.g. Roads Department, Sanitation Department, Electricity Board, Water Board"
 }`;
 
-  const result = await model.generateContent([
-    prompt,
-    {
-      inlineData: {
-        mimeType: getMimeType(imageBase64),
-        data: cleanBase64(imageBase64),
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: getMimeType(imageBase64),
+              data: cleanBase64(imageBase64),
+            },
+          },
+        ],
       },
-    },
-  ]);
+    ],
+  });
 
-  const text = result.response.text();
+  const text = response.text ?? "";
   return parseJsonResponse<GeminiAnalysis>(text);
 }
 
@@ -62,8 +85,6 @@ export async function compareResolutionImages(
   beforeBase64: string,
   afterBase64: string
 ): Promise<ResolutionCheck> {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
   const prompt = `Compare these two images of the same civic issue location.
 Image 1 is the "before" photo showing the reported issue.
 Image 2 is the "after" photo, submitted as proof of repair.
@@ -77,23 +98,31 @@ Return ONLY valid JSON, no markdown formatting, no backticks, no extra text. Use
   "status": "Resolved" | "Not Resolved" | "Unclear"
 }`;
 
-  const result = await model.generateContent([
-    prompt,
-    {
-      inlineData: {
-        mimeType: getMimeType(beforeBase64),
-        data: cleanBase64(beforeBase64),
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: getMimeType(beforeBase64),
+              data: cleanBase64(beforeBase64),
+            },
+          },
+          {
+            inlineData: {
+              mimeType: getMimeType(afterBase64),
+              data: cleanBase64(afterBase64),
+            },
+          },
+        ],
       },
-    },
-    {
-      inlineData: {
-        mimeType: getMimeType(afterBase64),
-        data: cleanBase64(afterBase64),
-      },
-    },
-  ]);
+    ],
+  });
 
-  const text = result.response.text();
+  const text = response.text ?? "";
   return parseJsonResponse<ResolutionCheck>(text);
 }
 
