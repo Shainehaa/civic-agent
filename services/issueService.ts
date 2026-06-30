@@ -36,6 +36,12 @@ function computeSlaDeadline(severity: Severity, createdAt: number): number {
 /**
  * Saves a newly analyzed issue to Firestore.
  * Computes the SLA deadline at write time based on severity.
+ *
+ * Wrapped with a timeout: if the Firestore write doesn't resolve within
+ * 10 seconds, we throw a clear error instead of leaving the UI stuck on
+ * a spinner forever with no feedback. This also helps surface what's
+ * actually going wrong (e.g. blocked network request, hung connection)
+ * since some Firestore failure modes don't reject cleanly.
  */
 export async function saveIssue(
   analysis: GeminiAnalysis,
@@ -63,7 +69,20 @@ export async function saveIssue(
     statusHistory: [initialChange],
   };
 
-  const docRef = await addDoc(collection(db, ISSUES_COLLECTION), issueData);
+  const writePromise = addDoc(collection(db, ISSUES_COLLECTION), issueData);
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(
+      () =>
+        reject(
+          new Error(
+            "Saving timed out after 10 seconds. This usually means the browser couldn't reach Firestore — check your network connection or Firestore configuration."
+          )
+        ),
+      10000
+    );
+  });
+
+  const docRef = await Promise.race([writePromise, timeoutPromise]);
   return docRef.id;
 }
 
