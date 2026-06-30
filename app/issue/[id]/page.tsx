@@ -9,6 +9,7 @@ import {
   updateIssueStatus,
 } from "@/services/issueService";
 import { CivicIssue, IssueStatus, ResolutionCheck } from "@/types";
+import { fileToCompressedBase64 } from "@/lib/imageCompression";
 
 const severityColor: Record<string, string> = {
   Low: "bg-green-100 text-green-800",
@@ -62,9 +63,11 @@ export default function IssueDetailPage() {
     onDrop: (acceptedFiles) => {
       const file = acceptedFiles[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => setAfterImage(reader.result as string);
-      reader.readAsDataURL(file);
+      fileToCompressedBase64(file)
+        .then(setAfterImage)
+        .catch(() =>
+          setVerifyError("Could not process that image. Please try a different one.")
+        );
     },
   });
 

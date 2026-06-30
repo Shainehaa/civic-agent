@@ -28,3 +28,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+echo build-env.yaml >> .gitignore
+echo runtime-env.yaml >> .gitignore

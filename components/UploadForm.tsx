@@ -6,6 +6,7 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { GeminiAnalysis } from "@/types";
+import { fileToCompressedBase64 } from "@/lib/imageCompression";
 
 interface UploadFormProps {
   onAnalysisComplete: (
@@ -21,15 +22,16 @@ export default function UploadForm({ onAnalysisComplete }: UploadFormProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Converts the uploaded file into a base64 string we can send to
-  // our API route and eventually store in Firestore.
-  const handleFile = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImagePreview(reader.result as string);
+  // Resizes and compresses the uploaded photo before it's ever sent
+  // anywhere — see lib/imageCompression.ts for why this matters.
+  const handleFile = useCallback(async (file: File) => {
+    try {
+      const compressed = await fileToCompressedBase64(file);
+      setImagePreview(compressed);
       setError(null);
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      setError("Could not process that image. Please try a different one.");
+    }
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
